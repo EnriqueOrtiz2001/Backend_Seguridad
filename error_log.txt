@@ -1,0 +1,4 @@
+TypeError: Cannot read properties of undefined (reading 'map')
+    at generarActaPP (C:\Users\marlo\Documents\WorkSpace\DINNOVA\informe-back\src\utils\generador_porcentaje_participacion.js:39:33)
+    at Socket.<anonymous> (C:\Users\marlo\Documents\WorkSpace\DINNOVA\informe-back\src\events\patente.js:292:5)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
