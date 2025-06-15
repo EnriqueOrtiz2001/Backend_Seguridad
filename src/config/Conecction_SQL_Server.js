@@ -1,84 +1,87 @@
 const sql = require('mssql');
 const winston = require('winston');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
+// DEPURACIÓN: Mostrar variables cargadas
+console.log('[DEBUG] Variables de entorno cargadas:');
+console.log(`DB_SERVER: ${process.env.DB_SERVER}`);
+console.log(`DB_NAME: ${process.env.DB_NAME}`);
+console.log(`DB_USER: ${process.env.DB_USER}`);
+console.log(`DB_PASSWORD: ${process.env.DB_PASSWORD ? '***' : 'undefined'}`);
 
-// Configuración de la conexión a SQL Server
+// Validación mejorada
+const requiredVars = ['DB_USER', 'DB_PASSWORD', 'DB_SERVER', 'DB_NAME'];
+const missingVars = requiredVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+    const errorMsg = `Faltan variables de entorno: ${missingVars.join(', ')}`;
+    console.error('[ERROR] ' + errorMsg);
+    throw new Error(errorMsg);
+}
+
+// Configuración de conexión
 const dbConfig = {
-  user: "sa",
-  password: "sa",
-  server: "Enrique8725\\TABULAR  ",
-  database: "testeoSeguridad",
-  port: 1466, // Usa el puerto directamente
-  options: {
-    encrypt: true,
-    trustServerCertificate: true,
-    // Remueve 'instanceName' si usas 'port'
-  },
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    server: process.env.DB_SERVER,
+    database: process.env.DB_NAME,
+    options: {
+        encrypt: true,
+        trustServerCertificate: true,
+        //instanceName: 'SQLEXPRESS'
+    }
 };
+
+console.log('[DEBUG] Configuración de conexión:', {
+    ...dbConfig,
+    password: '***' // No mostrar contraseña real
+});
 
 // Logger
 const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.Console(),
-    new winston.transports.File({ filename: 'database.log' }),
-  ],
+    level: 'info',
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+    ),
+    transports: [
+        new winston.transports.Console(),
+        new winston.transports.File({ filename: 'logs/database.log' })
+    ]
 });
 
-// Validación de configuración
-function validateConfig(config) {
-  if (!config.user || !config.password || !config.server || !config.database) {
-    throw new Error('Configuración de la base de datos incompleta.');
-  }
-}
-
-validateConfig(dbConfig);
-
-// Crear el pool de conexiones
-let poolPromise;
+// Pool de conexiones
+let pool;
+let poolConnect;
 
 async function getConnection() {
-  try {
-    if (!poolPromise) {
-      poolPromise = new sql.ConnectionPool(dbConfig)
-        .connect()
-        .then(pool => {
-          logger.info('Pool de conexión creado.');
-          console.log(dbConfig);
-          return pool;
-        })
-        .catch(err => {
-          logger.error('Error al crear el pool de conexión:', err);
-          console.log(dbConfig);
-          poolPromise = null; // Reinicia el pool en caso de error
-          throw new Error(`Error al conectar a SQL Server: ${err.message}`);
-        });
+    if (pool) {
+        return pool;
     }
-    return poolPromise;
-  } catch (err) {
-    logger.error('Error inesperado:', err);
-    throw new Error(`Error inesperado: ${err.message}`);
-  }
+
+    try {
+        pool = new sql.ConnectionPool(dbConfig);
+        poolConnect = pool.connect();
+        await poolConnect;
+        logger.info('Conexión a SQL Server establecida');
+        return pool;
+    } catch (err) {
+        logger.error('Error de conexión:', err);
+        throw new Error(`Error al conectar a SQL Server: ${err.message}`);
+    }
 }
 
 async function closePool() {
-  try {
-    if (poolPromise) {
-      const pool = await poolPromise;
-      await pool.close();
-      logger.info('Pool de conexión cerrado.');
-      poolPromise = null;
+    if (pool) {
+        await pool.close();
+        logger.info('Conexión cerrada');
+        pool = null;
     }
-  } catch (err) {
-    logger.error('Error al cerrar el pool de conexión:', err);
-    throw err;
-  }
 }
 
 module.exports = {
-  getConnection,
-  closePool,
-  sql,
+    getConnection,
+    closePool,
+    sql
 };
